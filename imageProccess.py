@@ -10,6 +10,7 @@ GRID_W, GRID_H = 40, 30
 tiles = {}
 edges = {}
 labels = {}
+label_flags = {}
 
 def get_edges(img):
     arr = np.array(img)
@@ -43,6 +44,7 @@ for filename in os.listdir("tiles"):
     tiles[tile_id] = img
     edges[tile_id] = get_edges(img)
     labels[tile_id] = label
+    label_flags[tile_id] = frozenset(ch for ch in label if ch in {"t", "b", "l", "r"})
 
 tile_w, tile_h = next(iter(tiles.values())).size
 
@@ -83,6 +85,8 @@ def find_best(target_edges=None, candidates=None, used=None):
 
     return best
 
+<<<<<<< codex/improve-image-placement-logic-c1cuwb
+=======
 
 def get_target_edges(row, col):
     """
@@ -165,60 +169,103 @@ while top <= bottom and left <= right:
 
         grid[top][col] = best
         used.add(best)
+>>>>>>> main
 
-    top += 1
+def get_target_edges(row, col):
+    """
+    Build edge constraints for a tile at (row, col) using already-placed neighbors.
+    """
+    target_edges = {}
 
-    # --- RIGHT COLUMN ---
-    for row in range(top, bottom + 1):
+    if row > 0 and grid[row - 1][col] is not None:
+        target_edges["top"] = edges[grid[row - 1][col]][1]
 
-        if grid[row][right] is not None:
-            continue
+    if row < GRID_H - 1 and grid[row + 1][col] is not None:
+        target_edges["bottom"] = edges[grid[row + 1][col]][0]
 
-        candidates = []
-        for i in tiles:
-            if i in used:
-                continue
+    if col > 0 and grid[row][col - 1] is not None:
+        target_edges["left"] = edges[grid[row][col - 1]][3]
 
-            label = labels.get(i, "")
+    if col < GRID_W - 1 and grid[row][col + 1] is not None:
+        target_edges["right"] = edges[grid[row][col + 1]][2]
 
-            if right == GRID_W - 1 and 'r' not in label:
-                continue
-            if row == GRID_H - 1 and bottom == GRID_H - 1 and 'b' not in label:
-                continue
+    return target_edges
 
-            candidates.append(i)
 
+<<<<<<< codex/improve-image-placement-logic-c1cuwb
+def tile_matches_position(tile_id, row, col):
+    """
+    Enforce that border/corner labels are only used in valid positions.
+    """
+    flags = label_flags.get(tile_id, frozenset())
+
+    on_top = row == 0
+    on_bottom = row == GRID_H - 1
+    on_left = col == 0
+    on_right = col == GRID_W - 1
+=======
         target_edges = get_target_edges(row, right)
         best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+>>>>>>> main
 
-        if best is None:
-            best = next(i for i in tiles if i not in used)
+    if ("t" in flags) != on_top:
+        return False
+    if ("b" in flags) != on_bottom:
+        return False
+    if ("l" in flags) != on_left:
+        return False
+    if ("r" in flags) != on_right:
+        return False
 
-        grid[row][right] = best
-        used.add(best)
+    return True
 
-    right -= 1
 
-    # --- BOTTOM ROW ---
-    for col in range(right, left - 1, -1):
+def find_exact_label(required_flags):
+    for tile_id, flags in label_flags.items():
+        if flags == required_flags:
+            return tile_id
+    return None
 
-        if grid[bottom][col] is not None:
-            continue
+# -----------------------------
+# Prepare grid
+# -----------------------------
+grid = [[None for _ in range(GRID_W)] for _ in range(GRID_H)]
+used = set()
 
-        candidates = []
-        for i in tiles:
-            if i in used:
+# -----------------------------
+# Fix corners first
+# -----------------------------
+corner_targets = [
+    ((0, 0), frozenset({"t", "l"}), "top-left"),
+    ((0, GRID_W - 1), frozenset({"t", "r"}), "top-right"),
+    ((GRID_H - 1, 0), frozenset({"b", "l"}), "bottom-left"),
+    ((GRID_H - 1, GRID_W - 1), frozenset({"b", "r"}), "bottom-right"),
+]
+
+for (row, col), flags, corner_name in corner_targets:
+    corner_tile = find_exact_label(flags)
+    if corner_tile is None:
+        raise ValueError(f"Missing required {corner_name} corner tile with label {''.join(sorted(flags))}")
+    grid[row][col] = corner_tile
+    used.add(corner_tile)
+    print(f"{corner_name} tile fixed:", corner_tile)
+
+# -----------------------------
+# Wavefront solving from all corners toward center
+# -----------------------------
+total_cells = GRID_W * GRID_H
+while len(used) < total_cells:
+    frontier = []
+
+    for row in range(GRID_H):
+        for col in range(GRID_W):
+            if grid[row][col] is not None:
                 continue
 
-            label = labels.get(i, "")
-
-            if bottom == GRID_H - 1 and 'b' not in label:
-                continue
-            if col == 0 and left == 0 and 'l' not in label:
-                continue
-            if col == GRID_W - 1 and right == GRID_W - 1 and 'r' not in label:
-                continue
-
+<<<<<<< codex/improve-image-placement-logic-c1cuwb
+            target_edges = get_target_edges(row, col)
+            if not target_edges:
+=======
             candidates.append(i)
 
         target_edges = get_target_edges(bottom, col)
@@ -241,29 +288,41 @@ while top <= bottom and left <= right:
         candidates = []
         for i in tiles:
             if i in used:
+>>>>>>> main
                 continue
 
-            label = labels.get(i, "")
+            neighbor_count = len(target_edges)
+            frontier.append((neighbor_count, row, col, target_edges))
 
-            if left == 0 and 'l' not in label:
-                continue
-            if row == 0 and top == 0 and 't' not in label:
-                continue
+    if not frontier:
+        raise RuntimeError("No frontier cells available; puzzle cannot progress with current constraints.")
 
-            candidates.append(i)
+<<<<<<< codex/improve-image-placement-logic-c1cuwb
+    # Most-constrained cells first (more already-placed neighbors)
+    frontier.sort(reverse=True, key=lambda item: item[0])
+    _, row, col, target_edges = frontier[0]
 
+    candidates = [
+        tile_id for tile_id in tiles
+        if tile_id not in used and tile_matches_position(tile_id, row, col)
+    ]
+=======
         target_edges = get_target_edges(row, left)
         best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+>>>>>>> main
 
-        if best is None:
-            best = next(i for i in tiles if i not in used)
+    if not candidates:
+        raise RuntimeError(f"No candidate tiles fit position ({row}, {col}) with border/corner constraints.")
 
-        grid[row][left] = best
-        used.add(best)
+    best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+    if best is None:
+        raise RuntimeError(f"Unable to score candidates for position ({row}, {col}).")
 
-    left += 1
+    grid[row][col] = best
+    used.add(best)
 
-    print(f"Layer completed. Used tiles: {len(used)}")
+    if len(used) % 100 == 0 or len(used) == total_cells:
+        print(f"Placed tiles: {len(used)}/{total_cells}")
 
 # -----------------------------
 # DEBUG OUTPUT
