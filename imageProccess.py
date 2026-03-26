@@ -61,6 +61,7 @@ OPPOSITE_EDGE_INDEX = {
 
 
 def rank_candidates(target_edges=None, candidates=None, used=None):
+def find_best(target_edges=None, candidates=None, used=None):
     """
     Pick the candidate tile whose relevant edges best match already-placed neighbors.
     `target_edges` maps a candidate edge name ("top"/"bottom"/"left"/"right")
@@ -68,6 +69,8 @@ def rank_candidates(target_edges=None, candidates=None, used=None):
     """
     target_edges = target_edges or {}
     ranked = []
+    best = None
+    best_score = float('inf')
 
     for i in candidates:
         if i in used:
@@ -83,6 +86,9 @@ def rank_candidates(target_edges=None, candidates=None, used=None):
 
     ranked.sort(key=lambda item: item[0])
     return ranked
+    ranked.sort(key=lambda item: item[0])
+    return ranked
+
 
 
 def get_target_edges(row, col):
@@ -111,6 +117,45 @@ def tile_matches_position(tile_id, row, col):
     Enforce that labeled borders/corners are only used in valid positions.
     Unlabeled tiles are allowed anywhere (including borders) unless they
     explicitly carry a conflicting flag.
+
+    if row > 0 and grid[row - 1][col] is not None:
+        target_edges["top"] = edges[grid[row - 1][col]][1]
+
+    if row < GRID_H - 1 and grid[row + 1][col] is not None:
+        target_edges["bottom"] = edges[grid[row + 1][col]][0]
+
+    if col > 0 and grid[row][col - 1] is not None:
+        target_edges["left"] = edges[grid[row][col - 1]][3]
+
+    if col < GRID_W - 1 and grid[row][col + 1] is not None:
+        target_edges["right"] = edges[grid[row][col + 1]][2]
+
+    return target_edges
+
+def get_target_edges(row, col):
+    """
+    Build edge constraints for a tile at (row, col) using already-placed neighbors.
+    """
+    target_edges = {}
+
+    if row > 0 and grid[row - 1][col] is not None:
+        target_edges["top"] = edges[grid[row - 1][col]][1]
+
+    if row < GRID_H - 1 and grid[row + 1][col] is not None:
+        target_edges["bottom"] = edges[grid[row + 1][col]][0]
+
+    if col > 0 and grid[row][col - 1] is not None:
+        target_edges["left"] = edges[grid[row][col - 1]][3]
+
+    if col < GRID_W - 1 and grid[row][col + 1] is not None:
+        target_edges["right"] = edges[grid[row][col + 1]][2]
+
+    return target_edges
+
+
+def tile_matches_position(tile_id, row, col):
+    """
+    Enforce that border/corner labels are only used in valid positions.
     """
     flags = label_flags.get(tile_id, frozenset())
 
@@ -118,6 +163,21 @@ def tile_matches_position(tile_id, row, col):
     on_bottom = row == GRID_H - 1
     on_left = col == 0
     on_right = col == GRID_W - 1
+
+    if ("t" in flags) != on_top:
+        return False
+    if ("b" in flags) != on_bottom:
+        return False
+    if ("l" in flags) != on_left:
+        return False
+    if ("r" in flags) != on_right:
+        return False
+
+    return True
+
+
+        target_edges = get_target_edges(top, col)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
 
     if "t" in flags and not on_top:
         return False
@@ -193,6 +253,46 @@ def choose_next_placement(frontier_cells, used_tiles):
         if best_choice is not None:
             return best_choice
 
+def get_target_edges(row, col):
+    """
+    Build edge constraints for a tile at (row, col) using already-placed neighbors.
+    """
+    target_edges = {}
+
+    if row > 0 and grid[row - 1][col] is not None:
+        target_edges["top"] = edges[grid[row - 1][col]][1]
+
+    if row < GRID_H - 1 and grid[row + 1][col] is not None:
+        target_edges["bottom"] = edges[grid[row + 1][col]][0]
+
+    if col > 0 and grid[row][col - 1] is not None:
+        target_edges["left"] = edges[grid[row][col - 1]][3]
+
+    if col < GRID_W - 1 and grid[row][col + 1] is not None:
+        target_edges["right"] = edges[grid[row][col + 1]][2]
+
+    return target_edges
+
+
+        target_edges = get_target_edges(row, right)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+
+    if ("t" in flags) != on_top:
+        return False
+    if ("b" in flags) != on_bottom:
+        return False
+    if ("l" in flags) != on_left:
+        return False
+    if ("r" in flags) != on_right:
+        return False
+
+    return True
+
+
+def find_exact_label(required_flags):
+    for tile_id, flags in label_flags.items():
+        if flags == required_flags:
+            return tile_id
     return None
 
 # -----------------------------
@@ -233,6 +333,21 @@ while len(used) < total_cells:
 
             target_edges = get_target_edges(row, col)
             if not target_edges:
+            candidates.append(i)
+
+        target_edges = get_target_edges(bottom, col)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+
+    best_choice = None
+    for neighbor_count in sorted({item[0] for item in frontier}, reverse=True):
+        constrained_cells = [item for item in frontier if item[0] == neighbor_count]
+
+        for _, row, col, target_edges in constrained_cells:
+            candidates = [
+                tile_id for tile_id in tiles
+                if tile_id not in used and tile_matches_position(tile_id, row, col)
+            ]
+            if not candidates:
                 continue
 
             neighbor_count = len(target_edges)
@@ -247,6 +362,20 @@ while len(used) < total_cells:
         raise RuntimeError("Unable to score candidates for the current constrained frontier.")
 
     _, _, row, col, best = best_choice
+
+
+    if not frontier:
+        raise RuntimeError("No frontier cells available; puzzle cannot progress with current constraints.")
+
+        target_edges = get_target_edges(row, left)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+
+    if not candidates:
+        raise RuntimeError(f"No candidate tiles fit position ({row}, {col}) with border/corner constraints.")
+
+    best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+    if best is None:
+        raise RuntimeError(f"Unable to score candidates for position ({row}, {col}).")
 
     grid[row][col] = best
     used.add(best)
