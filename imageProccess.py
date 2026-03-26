@@ -60,14 +60,15 @@ OPPOSITE_EDGE_INDEX = {
 }
 
 
-def rank_candidates(target_edges=None, candidates=None, used=None):
+def find_best(target_edges=None, candidates=None, used=None):
     """
     Pick the candidate tile whose relevant edges best match already-placed neighbors.
     `target_edges` maps a candidate edge name ("top"/"bottom"/"left"/"right")
     to a numpy array that this edge should match.
     """
     target_edges = target_edges or {}
-    ranked = []
+    best = None
+    best_score = float('inf')
 
     for i in candidates:
         if i in used:
@@ -79,11 +80,30 @@ def rank_candidates(target_edges=None, candidates=None, used=None):
             edge_idx = OPPOSITE_EDGE_INDEX[edge_name]
             score += edge_diff(target, edges[i][edge_idx])
 
-        ranked.append((score, i))
-
     ranked.sort(key=lambda item: item[0])
     return ranked
 
+
+
+def get_target_edges(row, col):
+    """
+    Build edge constraints for a tile at (row, col) using already-placed neighbors.
+    """
+    target_edges = {}
+
+    if row > 0 and grid[row - 1][col] is not None:
+        target_edges["top"] = edges[grid[row - 1][col]][1]
+
+    if row < GRID_H - 1 and grid[row + 1][col] is not None:
+        target_edges["bottom"] = edges[grid[row + 1][col]][0]
+
+    if col > 0 and grid[row][col - 1] is not None:
+        target_edges["left"] = edges[grid[row][col - 1]][3]
+
+    if col < GRID_W - 1 and grid[row][col + 1] is not None:
+        target_edges["right"] = edges[grid[row][col + 1]][2]
+
+    return target_edges
 
 def get_target_edges(row, col):
     """
@@ -108,9 +128,7 @@ def get_target_edges(row, col):
 
 def tile_matches_position(tile_id, row, col):
     """
-    Enforce that labeled borders/corners are only used in valid positions.
-    Unlabeled tiles are allowed anywhere (including borders) unless they
-    explicitly carry a conflicting flag.
+    Enforce that border/corner labels are only used in valid positions.
     """
     flags = label_flags.get(tile_id, frozenset())
 
@@ -119,39 +137,68 @@ def tile_matches_position(tile_id, row, col):
     on_left = col == 0
     on_right = col == GRID_W - 1
 
-    if "t" in flags and not on_top:
+    if ("t" in flags) != on_top:
         return False
-    if "b" in flags and not on_bottom:
+    if ("b" in flags) != on_bottom:
         return False
-    if "l" in flags and not on_left:
+    if ("l" in flags) != on_left:
         return False
-    if "r" in flags and not on_right:
+    if ("r" in flags) != on_right:
+        return False
+
+    return True
+
+
+        target_edges = get_target_edges(top, col)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+
+        if best is None:
+            best = next(i for i in tiles if i not in used)
+
+        grid[top][col] = best
+        used.add(best)
+
+def get_target_edges(row, col):
+    """
+    Build edge constraints for a tile at (row, col) using already-placed neighbors.
+    """
+    target_edges = {}
+
+    if row > 0 and grid[row - 1][col] is not None:
+        target_edges["top"] = edges[grid[row - 1][col]][1]
+
+    if row < GRID_H - 1 and grid[row + 1][col] is not None:
+        target_edges["bottom"] = edges[grid[row + 1][col]][0]
+
+    if col > 0 and grid[row][col - 1] is not None:
+        target_edges["left"] = edges[grid[row][col - 1]][3]
+
+    if col < GRID_W - 1 and grid[row][col + 1] is not None:
+        target_edges["right"] = edges[grid[row][col + 1]][2]
+
+    return target_edges
+
+
+        target_edges = get_target_edges(row, right)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+
+    if ("t" in flags) != on_top:
+        return False
+    if ("b" in flags) != on_bottom:
+        return False
+    if ("l" in flags) != on_left:
+        return False
+    if ("r" in flags) != on_right:
         return False
 
     return True
 
 
 def find_exact_label(required_flags):
-    matches = [tile_id for tile_id, flags in label_flags.items() if flags == required_flags]
-    if len(matches) == 1:
-        return matches[0]
-    if len(matches) > 1:
-        raise ValueError(
-            f"Expected exactly one tile for label {''.join(sorted(required_flags))}, found {len(matches)}"
-        )
+    for tile_id, flags in label_flags.items():
+        if flags == required_flags:
+            return tile_id
     return None
-
-
-def validate_grid_constraints():
-    for row in range(GRID_H):
-        for col in range(GRID_W):
-            tile_id = grid[row][col]
-            if tile_id is None:
-                raise RuntimeError(f"Grid contains empty cell at ({row}, {col})")
-            if not tile_matches_position(tile_id, row, col):
-                raise RuntimeError(
-                    f"Tile {tile_id}-{labels.get(tile_id, '')} violates position constraints at ({row}, {col})"
-                )
 
 # -----------------------------
 # Prepare grid
@@ -189,15 +236,10 @@ while len(used) < total_cells:
             if grid[row][col] is not None:
                 continue
 
-            target_edges = get_target_edges(row, col)
-            if not target_edges:
-                continue
+            candidates.append(i)
 
-            neighbor_count = len(target_edges)
-            frontier.append((neighbor_count, row, col, target_edges))
-
-    if not frontier:
-        raise RuntimeError("No frontier cells available; puzzle cannot progress with current constraints.")
+        target_edges = get_target_edges(bottom, col)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
 
     best_choice = None
     for neighbor_count in sorted({item[0] for item in frontier}, reverse=True):
@@ -211,24 +253,21 @@ while len(used) < total_cells:
             if not candidates:
                 continue
 
-            ranked = rank_candidates(target_edges=target_edges, candidates=candidates, used=used)
-            if not ranked:
-                continue
+            neighbor_count = len(target_edges)
+            frontier.append((neighbor_count, row, col, target_edges))
 
-            best_score, best_tile = ranked[0]
-            second_score = ranked[1][0] if len(ranked) > 1 else float("inf")
-            margin = second_score - best_score
-            choice = (best_score, -margin, row, col, best_tile)
-            if best_choice is None or choice < best_choice:
-                best_choice = choice
+    if not frontier:
+        raise RuntimeError("No frontier cells available; puzzle cannot progress with current constraints.")
 
-        if best_choice is not None:
-            break
+        target_edges = get_target_edges(row, left)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
 
-    if best_choice is None:
-        raise RuntimeError("Unable to score candidates for the current constrained frontier.")
+    if not candidates:
+        raise RuntimeError(f"No candidate tiles fit position ({row}, {col}) with border/corner constraints.")
 
-    _, _, row, col, best = best_choice
+    best = find_best(target_edges=target_edges, candidates=candidates, used=used)
+    if best is None:
+        raise RuntimeError(f"Unable to score candidates for position ({row}, {col}).")
 
     grid[row][col] = best
     used.add(best)
@@ -236,8 +275,6 @@ while len(used) < total_cells:
     if len(used) % 100 == 0 or len(used) == total_cells:
         print(f"Placed tiles: {len(used)}/{total_cells}")
 
-validate_grid_constraints()
-print("Position constraints validated.")
 
 # -----------------------------
 # DEBUG OUTPUT
