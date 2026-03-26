@@ -49,7 +49,21 @@ tile_w, tile_h = next(iter(tiles.values())).size
 # -----------------------------
 # Matching function
 # -----------------------------
-def find_best(target_top=None, target_left=None, candidates=None, used=None):
+OPPOSITE_EDGE_INDEX = {
+    "top": 0,
+    "bottom": 1,
+    "left": 2,
+    "right": 3,
+}
+
+
+def find_best(target_edges=None, candidates=None, used=None):
+    """
+    Pick the candidate tile whose relevant edges best match already-placed neighbors.
+    `target_edges` maps a candidate edge name ("top"/"bottom"/"left"/"right")
+    to a numpy array that this edge should match.
+    """
+    target_edges = target_edges or {}
     best = None
     best_score = float('inf')
 
@@ -59,17 +73,36 @@ def find_best(target_top=None, target_left=None, candidates=None, used=None):
 
         score = 0
 
-        if target_top is not None:
-            score += edge_diff(target_top, edges[i][0])
-
-        if target_left is not None:
-            score += edge_diff(target_left, edges[i][2])
+        for edge_name, target in target_edges.items():
+            edge_idx = OPPOSITE_EDGE_INDEX[edge_name]
+            score += edge_diff(target, edges[i][edge_idx])
 
         if score < best_score:
             best_score = score
             best = i
 
     return best
+
+
+def get_target_edges(row, col):
+    """
+    Build edge constraints for a tile at (row, col) using already-placed neighbors.
+    """
+    target_edges = {}
+
+    if row > 0 and grid[row - 1][col] is not None:
+        target_edges["top"] = edges[grid[row - 1][col]][1]
+
+    if row < GRID_H - 1 and grid[row + 1][col] is not None:
+        target_edges["bottom"] = edges[grid[row + 1][col]][0]
+
+    if col > 0 and grid[row][col - 1] is not None:
+        target_edges["left"] = edges[grid[row][col - 1]][3]
+
+    if col < GRID_W - 1 and grid[row][col + 1] is not None:
+        target_edges["right"] = edges[grid[row][col + 1]][2]
+
+    return target_edges
 
 # -----------------------------
 # Prepare grid
@@ -124,11 +157,8 @@ while top <= bottom and left <= right:
 
             candidates.append(i)
 
-        target_left = None
-        if col > left:
-            target_left = edges[grid[top][col - 1]][3]
-
-        best = find_best(target_left=target_left, candidates=candidates, used=used)
+        target_edges = get_target_edges(top, col)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
 
         if best is None:
             best = next(i for i in tiles if i not in used)
@@ -158,9 +188,8 @@ while top <= bottom and left <= right:
 
             candidates.append(i)
 
-        target_top = edges[grid[row - 1][right]][1]
-
-        best = find_best(target_top=target_top, candidates=candidates, used=used)
+        target_edges = get_target_edges(row, right)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
 
         if best is None:
             best = next(i for i in tiles if i not in used)
@@ -192,11 +221,8 @@ while top <= bottom and left <= right:
 
             candidates.append(i)
 
-        target_left = None
-        if col < right:
-            target_left = edges[grid[bottom][col + 1]][2]
-
-        best = find_best(target_left=target_left, candidates=candidates, used=used)
+        target_edges = get_target_edges(bottom, col)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
 
         if best is None:
             best = next(i for i in tiles if i not in used)
@@ -226,9 +252,8 @@ while top <= bottom and left <= right:
 
             candidates.append(i)
 
-        target_top = edges[grid[row + 1][left]][0]
-
-        best = find_best(target_top=target_top, candidates=candidates, used=used)
+        target_edges = get_target_edges(row, left)
+        best = find_best(target_edges=target_edges, candidates=candidates, used=used)
 
         if best is None:
             best = next(i for i in tiles if i not in used)
