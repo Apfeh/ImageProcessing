@@ -105,11 +105,11 @@ def get_target_edges(row, col):
 
     return target_edges
 
-# -----------------------------
-# Prepare grid
-# -----------------------------
-grid = [[None for _ in range(GRID_W)] for _ in range(GRID_H)]
-used = set()
+def get_target_edges(row, col):
+    """
+    Build edge constraints for a tile at (row, col) using already-placed neighbors.
+    """
+    target_edges = {}
 
     if row > 0 and grid[row - 1][col] is not None:
         target_edges["top"] = edges[grid[row - 1][col]][1]
@@ -241,23 +241,16 @@ while len(used) < total_cells:
         target_edges = get_target_edges(bottom, col)
         best = find_best(target_edges=target_edges, candidates=candidates, used=used)
 
-        if best is None:
-            best = next(i for i in tiles if i not in used)
+    best_choice = None
+    for neighbor_count in sorted({item[0] for item in frontier}, reverse=True):
+        constrained_cells = [item for item in frontier if item[0] == neighbor_count]
 
-        grid[bottom][col] = best
-        used.add(best)
-
-    bottom -= 1
-
-    # --- LEFT COLUMN ---
-    for row in range(bottom, top - 1, -1):
-
-        if grid[row][left] is not None:
-            continue
-
-        candidates = []
-        for i in tiles:
-            if i in used:
+        for _, row, col, target_edges in constrained_cells:
+            candidates = [
+                tile_id for tile_id in tiles
+                if tile_id not in used and tile_matches_position(tile_id, row, col)
+            ]
+            if not candidates:
                 continue
 
             neighbor_count = len(target_edges)
